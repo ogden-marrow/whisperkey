@@ -144,8 +144,8 @@ static unsafe class Program {
             Log.Write("nothing recognised");
             return;
         }
-        // Insertion lands in #10.
-        Log.Write($"ready to insert: \"{text}\"");
+        Insert.Text(text, Config.Current.InsertionMode);
+        Log.Write($"inserted {text.Length} chars");
     }
 
     static void CancelDictation() {
