@@ -27,14 +27,14 @@ Password fields are always excluded.
 
 ## Install
 
-Download the `.msi` from [Releases](https://github.com/ogden-marrow/whisperkey/releases)
-and run it. It installs per-user, so there is no admin prompt.
+Download the `.msi` from the
+[latest release](https://github.com/ogden-marrow/whisperkey/releases/latest) and
+run it. It installs per-user, so there is no admin prompt, adds a Start Menu
+entry, and uninstalls cleanly from Settings.
 
-```
-winget install --id ogden-marrow.Whisperkey
-```
-
-*(Not on winget yet — download the MSI for now.)*
+There is also a `.zip` if you would rather not install anything. Note that
+`Whisperkey.exe` needs the two DLLs beside it, so take the whole zip rather than
+just the exe.
 
 On first run it downloads the speech model, about 465 MB, into `%LOCALAPPDATA%`.
 That happens once, in the background, with progress in the tray.
