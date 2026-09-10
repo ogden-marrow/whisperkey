@@ -55,6 +55,11 @@ jobs:
         shell: pwsh
         run: Write-Host "Signing secrets present; add the Trusted Signing step here."
 
+      - name: Build the MSI
+        run: >
+          dotnet build installer/Whisperkey.wixproj -c Release
+          -p:Version=${{ steps.v.outputs.version }}
+
       - name: Stage the release files
         id: stage
         shell: pwsh
@@ -63,6 +68,7 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           # The exe needs its native neighbours; ship a zip as well as the raw exe.
           Copy-Item "$pub/*.exe","$pub/*.dll" dist/
+          Copy-Item "installer/bin/x64/Release/Whisperkey.msi" "dist/Whisperkey-${{ steps.v.outputs.tag }}-win-x64.msi"
           $zip = "dist/Whisperkey-${{ steps.v.outputs.tag }}-win-x64.zip"
           Compress-Archive -Path "$pub/*.exe","$pub/*.dll" -DestinationPath $zip -Force
           $files = Get-ChildItem dist -File
@@ -87,7 +93,11 @@ text box, talk, press Enter. Nothing leaves your machine.
 
 ### Install
 
-Download the zip, unblock it, and run ``Whisperkey.exe``. It lives in the tray.
+**Recommended:** download the ``.msi`` and run it. It installs per-user (no admin
+prompt), adds a Start Menu entry, and uninstalls cleanly from Settings.
+
+Or download the zip, unblock it, and run ``Whisperkey.exe`` directly. It lives in
+the tray.
 On first run it downloads the speech model (~465 MB) into ``%LOCALAPPDATA%``.
 
 ### About the SmartScreen warning

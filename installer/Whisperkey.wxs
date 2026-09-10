@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!--
+    Per-user install. No elevation, no UAC prompt on every update, which suits a
+    tray utility. The UpgradeCode must never change for the life of the product -
+    it is how Windows knows v0.2 replaces v0.1 instead of installing alongside it.
+  -->
+  <Package Name="Whisperkey"
+           Manufacturer="Whisperkey"
+           Version="$(var.Version)"
+           UpgradeCode="6f2b9a41-3c7e-4d18-9b55-1e0a7c4d5f22"
+           Scope="perUser"
+           Compressed="yes">
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Whisperkey is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="Whisperkey.ico" SourceFile="Whisperkey.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Whisperkey.ico" />
+    <!-- Without this Settings shows no folder for the app. -->
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="both" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/ogden-marrow/whisperkey" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ogden-marrow/whisperkey" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!--
+      Close a running instance rather than demanding a reboot. The app is
+      single-instance on a named mutex, so leaving one running during an upgrade
+      would lock the exe and force a restart on the user.
+    -->
+    <util:CloseApplication xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+                           Id="CloseWhisperkey"
+                           Target="Whisperkey.exe"
+                           CloseMessage="yes"
+                           RebootPrompt="no"
+                           Timeout="10" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Whisperkey" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="Whisperkey" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Whisperkey" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="RunAtSignIn" />
+      <ComponentRef Id="UserData" />
+    </Feature>
+
+    <!--
+      Per-user components must use an HKCU registry KeyPath, not a file (ICE38),
+      and user-profile directories must be explicitly removed on uninstall (ICE64).
+    -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainExe" Guid="a3f1c802-5d64-4b19-9c77-2e51f0a9d301">
+        <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="MainExe" Type="integer" Value="1" KeyPath="yes" />
+        <File Id="WhisperkeyExe" Source="$(var.PublishDir)\Whisperkey.exe" />
+      </Component>
+      <Component Id="OnnxRuntime" Guid="b7c24d15-8e93-4a26-b0d8-6f3a1c7e5402">
+        <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="OnnxRuntime" Type="integer" Value="1" KeyPath="yes" />
+        <File Source="$(var.PublishDir)\onnxruntime.dll" />
+      </Component>
+      <Component Id="SherpaApi" Guid="c9e46a27-1f05-4d38-8b41-7a92d4b6e503">
+        <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="SherpaApi" Type="integer" Value="1" KeyPath="yes" />
+        <File Source="$(var.PublishDir)\sherpa-onnx-c-api.dll" />
+      </Component>
+      <Component Id="CleanInstallFolder" Guid="*">
+        <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="CleanUp" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Start Menu only. A background tray utility has no business on the desktop. -->
+    <Component Id="StartMenuShortcut" Directory="ShortcutFolder" Guid="*">
+      <Shortcut Id="AppShortcut"
+                Name="Whisperkey"
+                Description="Local dictation into any text field"
+                Target="[INSTALLFOLDER]Whisperkey.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="Whisperkey.ico" />
+      <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!--
+      Writes the same Run key the tray menu toggles, so the installer and the app
+      can never disagree about whether Whisperkey starts with Windows.
+    -->
+    <Component Id="RunAtSignIn" Directory="INSTALLFOLDER" Guid="*" Condition="STARTWITHWINDOWS=1">
+      <RegistryValue Root="HKCU"
+                     Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                     Name="Whisperkey"
+                     Type="string"
+                     Value="&quot;[INSTALLFOLDER]Whisperkey.exe&quot;"
+                     KeyPath="yes" />
+    </Component>
+
+    <!--
+      Uninstall keeps config and the ~465 MB model by default, and removes them
+      only when REMOVEUSERDATA=1. Silently orphaning half a gigabyte is rude;
+      deleting someone's settings without asking is worse.
+    -->
+    <Component Id="UserData" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue Root="HKCU" Key="Software\Whisperkey" Name="UserData" Type="integer" Value="1" KeyPath="yes" />
+      <util:RemoveFolderEx xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+                           Id="RemoveModels" On="uninstall" Property="MODELDIR" Condition="REMOVEUSERDATA=1" />
+    </Component>
+
+    <Property Id="STARTWITHWINDOWS" Value="1" />
+    <Property Id="REMOVEUSERDATA" Value="0" />
+
+    <SetProperty Id="MODELDIR" Value="[LocalAppDataFolder]Whisperkey" Before="CostFinalize" Sequence="execute" />
+
+    <ui:WixUI xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Package>
+</Wix>

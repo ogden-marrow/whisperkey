@@ -1,0 +1,16 @@
+<Project Sdk="WixToolset.Sdk/6.0.0">
+  <PropertyGroup>
+    <OutputName>Whisperkey</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- The app is x64; without this the MSI registers itself as 32-bit. -->
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildThisFileDirectory)..\src\Whisperkey\bin\Release\net9.0-windows\win-x64\publish</PublishDir>
+    <DefineConstants>Version=$(Version);PublishDir=$(PublishDir)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="6.0.0" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="6.0.0" />
+  </ItemGroup>
+</Project>
