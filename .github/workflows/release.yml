@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # release notes need the history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Put the VS Installer on PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+
+      - name: Work out the version
+        id: v
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/', '' }
+                 else { '${{ github.event.inputs.tag }}' }
+          $version = $tag -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$tag' is not vMAJOR.MINOR.PATCH" }
+          "tag=$tag"         | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
+
+      - name: Publish
+        run: >
+          dotnet publish src/Whisperkey/Whisperkey.csproj -c Release -warnaserror
+          -p:Version=${{ steps.v.outputs.version }}
+          -p:DebugType=none
+
+      - name: Sign
+        # Deliberately inert until signing secrets exist - see #25. Adding the
+        # secrets turns this on; nothing here needs rewriting.
+        if: ${{ env.AZURE_SIGN_CLIENT_ID != '' }}
+        env:
+          AZURE_SIGN_CLIENT_ID: ${{ secrets.AZURE_SIGN_CLIENT_ID }}
+        shell: pwsh
+        run: Write-Host "Signing secrets present; add the Trusted Signing step here."
+
+      - name: Stage the release files
+        id: stage
+        shell: pwsh
+        run: |
+          $pub = "src/Whisperkey/bin/Release/net9.0-windows/win-x64/publish"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          # The exe needs its native neighbours; ship a zip as well as the raw exe.
+          Copy-Item "$pub/*.exe","$pub/*.dll" dist/
+          $zip = "dist/Whisperkey-${{ steps.v.outputs.tag }}-win-x64.zip"
+          Compress-Archive -Path "$pub/*.exe","$pub/*.dll" -DestinationPath $zip -Force
+          $files = Get-ChildItem dist -File
+          $lines = foreach ($f in $files) { "$((Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower())  $($f.Name)" }
+          $lines | Out-File dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $prev = git describe --tags --abbrev=0 "${{ steps.v.outputs.tag }}^" 2>$null
+          $range = if ($prev) { "$prev..${{ steps.v.outputs.tag }}" } else { "${{ steps.v.outputs.tag }}" }
+          $log = git log $range --pretty=format:'- %s' --no-merges |
+                 Where-Object { $_ -notmatch '^\- (chore|ci)\b' }
+          $sums = (Get-Content dist/SHA256SUMS.txt) -join "`n"
+          $body = @"
+## Whisperkey ${{ steps.v.outputs.tag }}
+
+Local dictation into any Windows text field. Press the hotkey with your caret in a
+text box, talk, press Enter. Nothing leaves your machine.
+
+### Install
+
+Download the zip, unblock it, and run ``Whisperkey.exe``. It lives in the tray.
+On first run it downloads the speech model (~465 MB) into ``%LOCALAPPDATA%``.
+
+### About the SmartScreen warning
+
+**These builds are not code-signed**, so Windows will show "Windows protected your
+PC" on first run. That is expected. Signing costs money and has real eligibility
+hurdles for individuals, so v0.x ships unsigned rather than pretending otherwise.
+Verify what you downloaded against the checksums below if you would like to.
+
+``````
+$sums
+``````
+
+### Changes
+
+$($log -join "`n")
+"@
+          $body | Out-File release-notes.md -Encoding utf8
+          Get-Content release-notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" `
+            (Get-ChildItem dist -File | ForEach-Object { $_.FullName }) `
+            --title "Whisperkey ${{ steps.v.outputs.tag }}" `
+            --notes-file release-notes.md
