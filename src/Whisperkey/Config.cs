@@ -23,15 +23,14 @@ partial class SettingsContext : JsonSerializerContext { }
 static class Config {
     // The default encoder escapes '+' as +, which looks broken in a file the
     // user is expected to hand-edit. This is a local file, so relaxed escaping is safe.
-    static readonly JsonSerializerOptions Json = new() {
-        TypeInfoResolver = SettingsContext.Default,
+    static readonly SettingsContext Ctx = new(new JsonSerializerOptions {
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,   // hand-edited files should not fail on case
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
-    };
+    });
 
     static FileSystemWatcher _watcher;
     static Timer _debounce;
@@ -62,7 +61,7 @@ static class Config {
     static Settings Read() {
         try {
             var json = ReadShared(FilePath);
-            var s = JsonSerializer.Deserialize<Settings>(json, Json);
+            var s = JsonSerializer.Deserialize(json, Ctx.Settings);
             if (s is null) { Invalid?.Invoke("config.json is empty; using defaults."); return null; }
             return s;
         } catch (JsonException e) {
@@ -82,7 +81,7 @@ static class Config {
     }
 
     static void Save(Settings s) {
-        try { File.WriteAllText(FilePath, JsonSerializer.Serialize(s, Json)); }
+        try { File.WriteAllText(FilePath, JsonSerializer.Serialize(s, Ctx.Settings)); }
         catch { }
     }
 
