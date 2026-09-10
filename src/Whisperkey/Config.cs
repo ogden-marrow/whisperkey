@@ -63,19 +63,33 @@ static class Config {
     }
 
     static Settings Read() {
+        string json;
+        try { json = ReadShared(FilePath); }
+        catch (Exception e) { Invalid?.Invoke($"Could not read config.json: {e.Message}"); return null; }
+
+        if (!TryParse(json, out var settings, out var error)) { Invalid?.Invoke(error); return null; }
+        return settings;
+    }
+
+    /// Parsing, separated from the file so it can be tested without touching disk.
+    /// Returns false and an explanation rather than throwing, because the caller's
+    /// job is to keep the last good settings and say something useful.
+    internal static bool TryParse(string json, out Settings settings, out string error) {
+        settings = null;
+        error = null;
         try {
-            var json = ReadShared(FilePath);
             var s = JsonSerializer.Deserialize(json, Ctx.Settings);
-            if (s is null) { Invalid?.Invoke("config.json is empty; using defaults."); return null; }
-            return s;
+            if (s is null) { error = "config.json is empty; using defaults."; return false; }
+            settings = s;
+            return true;
         } catch (JsonException e) {
-            Invalid?.Invoke($"config.json is not valid JSON ({e.Message.Split('.')[0]}); using the previous settings.");
-            return null;
-        } catch (Exception e) {
-            Invalid?.Invoke($"Could not read config.json: {e.Message}");
-            return null;
+            error = $"config.json is not valid JSON ({e.Message.Split('.')[0]}); using the previous settings.";
+            return false;
         }
     }
+
+    /// Serialising a Settings the same way the file is written. Used by the tests.
+    internal static string Serialize(Settings s) => JsonSerializer.Serialize(s, Ctx.Settings);
 
     /// The editor that just wrote the file may still hold it open.
     static string ReadShared(string path) {
