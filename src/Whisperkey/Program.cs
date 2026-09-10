@@ -4,6 +4,7 @@ namespace Whisperkey;
 
 static unsafe class Program {
     static Tray _tray;
+    static FocusWatcher _focus;
     static N.WndProc _proc;   // must outlive the window; the GC does not know Win32 holds it
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint p, int f);
@@ -43,11 +44,15 @@ static unsafe class Program {
         Config.Invalid += m => _tray.Notify("Whisperkey config", m);
         Config.Changed += () => _tray.Notify("Whisperkey", $"Settings reloaded. Hotkey: {Config.Current.Hotkey}");
 
+        _focus = new FocusWatcher();
+        _focus.Start();
+
         while (N.GetMessageW(out var msg, 0, 0, 0) > 0) {
             N.TranslateMessage(ref msg);
             N.DispatchMessageW(ref msg);
         }
 
+        _focus.Dispose();
         _tray.Dispose();
         return 0;
     }
