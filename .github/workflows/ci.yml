@@ -20,6 +20,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lint the workflows
+        # A malformed workflow fails in 0s with no job and no log, which is a
+        # miserable thing to debug. Release.yml was broken this way once, by a
+        # PowerShell here-string that has to start at column 0 and so broke the
+        # YAML block scalar around it. Parse them here instead.
+        shell: pwsh
+        run: |
+          python -c @"
+          import sys, glob, yaml
+          bad = False
+          for f in sorted(glob.glob('.github/workflows/*.yml')):
+              try:
+                  yaml.safe_load(open(f, encoding='utf-8'))
+                  print(f'ok   {f}')
+              except Exception as e:
+                  print(f'FAIL {f}: {e}'); bad = True
+          sys.exit(1 if bad else 0)
+          "@
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
