@@ -20,6 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lint the workflows
+        # A workflow GitHub cannot parse fails in 0s with no job and no log.
+        # release.yml broke that way once; this makes it impossible to merge quietly.
+        shell: bash
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/lint-workflows.py
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
