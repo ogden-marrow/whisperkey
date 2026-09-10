@@ -5,6 +5,7 @@ namespace Whisperkey;
 static unsafe class Program {
     static Tray _tray;
     static FocusWatcher _focus;
+    static Keyboard _keys;
     static N.WndProc _proc;   // must outlive the window; the GC does not know Win32 holds it
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint p, int f);
@@ -47,11 +48,21 @@ static unsafe class Program {
         _focus = new FocusWatcher();
         _focus.Start();
 
+        _keys = new Keyboard(_focus);
+        _keys.Failed  += m => _tray.Notify("Whisperkey", m);
+        _keys.Killed  += () => _tray.Notify("Whisperkey",
+            "Keyboard hook released by double-Esc. Use the tray menu to start dictation again.");
+        _keys.StartRequested  += () => { Log.Write("hotkey -> start"); SetRecording(true); };
+        _keys.StopRequested   += () => { Log.Write("stop -> insert"); SetRecording(false); };
+        _keys.CancelRequested += () => { Log.Write("cancel"); SetRecording(false); };
+        _keys.Start();
+
         while (N.GetMessageW(out var msg, 0, 0, 0) > 0) {
             N.TranslateMessage(ref msg);
             N.DispatchMessageW(ref msg);
         }
 
+        _keys.Dispose();
         _focus.Dispose();
         _tray.Dispose();
         return 0;
@@ -84,15 +95,21 @@ static unsafe class Program {
         return N.DefWindowProcW(hwnd, msg, w, l);
     }
 
+    static void SetRecording(bool on) {
+        _keys.SetRecording(on);
+        _tray.SetRecording(on);
+    }
+
     static void OnCommand(int cmd) {
         switch (cmd) {
             case Tray.CmdDictate:
-                // Wired up in #5/#6; the tray path exists so the menu is never a dead end.
-                _tray.Notify("Whisperkey", "Dictation is not wired up yet.");
+                _keys.Rearm();                       // also the way back from the kill switch
+                SetRecording(!_tray.Recording);
                 break;
             case Tray.CmdPause:
                 _tray.Paused = !_tray.Paused;
-                _tray.SetRecording(false);
+                _keys.Paused = _tray.Paused;
+                SetRecording(false);
                 break;
             case Tray.CmdStartup:
                 Startup.Toggle();
