@@ -53,6 +53,9 @@ static unsafe class Program {
 
         _tray = new Tray(hwnd) { IsStartupEnabled = () => Startup.Enabled };
 
+        if (Log.On)
+            Log.Write($"tray ready {(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds:F1} ms after process start");
+
         // A bad config file must say so rather than silently reverting to defaults.
         Config.Invalid += m => _tray.Notify("Whisperkey config", m);
         Config.Changed += () => { Theme.Refresh(); _tray.Notify("Whisperkey", $"Settings reloaded. Hotkey: {Config.Current.Hotkey}"); };
