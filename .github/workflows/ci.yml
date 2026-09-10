@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          # sherpa-onnx ships a large native runtime; restoring it every run is slow.
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Put the VS Installer on PATH
+        # NativeAOT shells out to the MSVC linker via vswhere. Without this the
+        # publish fails with "'vswhere.exe' is not recognized", which is a
+        # thoroughly unhelpful way to learn that - see ADR 0002.
+        shell: pwsh
+        run: |
+          $vsInstaller = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          if (-not (Test-Path "$vsInstaller\vswhere.exe")) {
+            Write-Error "vswhere.exe not found at $vsInstaller - NativeAOT cannot link."
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $vsInstaller
+
+      - name: Restore
+        run: dotnet restore src/Whisperkey/Whisperkey.csproj
+
+      - name: Build
+        # Warnings are errors in CI. We are at zero and intend to stay there.
+        run: dotnet build src/Whisperkey/Whisperkey.csproj -c Release --no-restore -warnaserror
+
+      - name: Publish (NativeAOT)
+        # An IL2026/IL3050 here means trimming can break config or serialization at
+        # runtime while every test still passes, so it must fail the build.
+        run: dotnet publish src/Whisperkey/Whisperkey.csproj -c Release --no-restore -warnaserror
+
+      - name: Check the exe was actually produced
+        shell: pwsh
+        run: |
+          $exe = "src/Whisperkey/bin/Release/net9.0-windows/win-x64/publish/Whisperkey.exe"
+          if (-not (Test-Path $exe)) { throw "Whisperkey.exe was not produced" }
+          $mb = [math]::Round((Get-Item $exe).Length / 1MB, 2)
+          Write-Host "Whisperkey.exe = $mb MB"
+          # A NativeAOT build that suddenly balloons means something pulled in a
+          # framework we did not intend to ship.
+          if ($mb -gt 20) { throw "Whisperkey.exe is $mb MB, which is far larger than expected" }
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisperkey-win-x64
+          path: |
+            src/Whisperkey/bin/Release/net9.0-windows/win-x64/publish/*.exe
+            src/Whisperkey/bin/Release/net9.0-windows/win-x64/publish/*.dll
+          if-no-files-found: error
