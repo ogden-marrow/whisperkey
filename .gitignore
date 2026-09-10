@@ -4,3 +4,5 @@ models/
 *.user
 
 *.png
+installer/bin/
+installer/obj/

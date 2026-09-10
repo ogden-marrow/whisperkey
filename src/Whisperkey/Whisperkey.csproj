@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Whisperkey</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\mic-dark.ico</ApplicationIcon>
 
     <!-- ADR 0002: NativeAOT gets us tray-ready in ~16ms. Needs the MSVC linker on PATH. -->
     <PublishAot>true</PublishAot>
