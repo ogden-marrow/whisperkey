@@ -14,7 +14,7 @@ static class Pill {
 
     /// <param name="level">0..1 microphone level.</param>
     /// <param name="busy">true while transcribing rather than listening.</param>
-    public static void Render(Span<uint> px, int w, int h, float scale, uint accent, float level, bool busy, bool highContrast, uint fg, uint bg) {
+    public static void Render(Span<uint> px, int w, int h, float scale, uint accent, float level, bool busy, bool highContrast, uint fg, uint bg, bool shadowOn = true, float opacity = 1f) {
         px.Clear();
 
         float pad = Pad * scale;
@@ -34,7 +34,9 @@ static class Pill {
 
                 // Soft shadow: the pill's own distance field, offset downward.
                 float ds = RoundRect(fx, fy - 2f * scale, rx, ry, rw, rh, radius);
-                float shadow = Smooth(6f * scale, 0f, ds) * 0.30f;
+                // The "Transparency effects" accessibility setting turns the soft
+                // shadow off; it is exactly the sort of effect that setting means.
+                float shadow = shadowOn ? Smooth(6f * scale, 0f, ds) * 0.30f : 0f;
 
                 float d = RoundRect(fx, fy, rx, ry, rw, rh, radius);
                 float body = Smooth(0.75f, -0.75f, d);
@@ -58,7 +60,7 @@ static class Pill {
                 float sa = shadow * (1 - body);
                 r *= body / MathF.Max(a, 1e-4f); g *= body / MathF.Max(a, 1e-4f); bb *= body / MathF.Max(a, 1e-4f);
 
-                px[y * w + x] = Premultiplied(r, g, bb, a);
+                px[y * w + x] = Premultiplied(r, g, bb, a * opacity);
             }
         }
     }
