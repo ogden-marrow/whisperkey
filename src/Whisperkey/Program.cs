@@ -20,6 +20,7 @@ static unsafe class Program {
         CoInitializeEx(0, 2);
 
         Theme.Refresh();
+        Config.Load();
 
         var inst = N.GetModuleHandleW(null);
         _proc = WndProc;
@@ -37,6 +38,10 @@ static unsafe class Program {
         if (hwnd == 0) return 1;
 
         _tray = new Tray(hwnd) { IsStartupEnabled = () => Startup.Enabled };
+
+        // A bad config file must say so rather than silently reverting to defaults.
+        Config.Invalid += m => _tray.Notify("Whisperkey config", m);
+        Config.Changed += () => _tray.Notify("Whisperkey", $"Settings reloaded. Hotkey: {Config.Current.Hotkey}");
 
         while (N.GetMessageW(out var msg, 0, 0, 0) > 0) {
             N.TranslateMessage(ref msg);
@@ -64,6 +69,7 @@ static unsafe class Program {
             case N.WM_SETTINGCHANGE:
             case N.WM_DWMCOLORIZATIONCOLORCHANGED:
                 Theme.Refresh();
+        Config.Load();
                 return 0;
 
             case N.WM_DESTROY:
@@ -87,10 +93,7 @@ static unsafe class Program {
                 Startup.Toggle();
                 break;
             case Tray.CmdConfig:
-                // #3 replaces this with the config file itself once it exists.
-                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Whisperkey");
-                Directory.CreateDirectory(dir);
-                ShellExecuteW(0, "open", dir, null, null, 1);
+                ShellExecuteW(0, "open", Config.EnsureFile(), null, null, 1);
                 break;
             case Tray.CmdAbout:
                 _tray.Notify("Whisperkey", "Local dictation into any text field. Nothing leaves this machine.");
