@@ -46,6 +46,7 @@ static unsafe class Program {
         _host = hwnd;
 
         DarkMode.Apply(hwnd);
+        Announce.Attach(hwnd);
 
         _overlay = new Overlay();
         _overlay.Create(inst);
@@ -156,6 +157,7 @@ static unsafe class Program {
         if (!_audio.Start(Config.Current.Device)) return;
         SetRecording(true);
         N.PostMessageW(_host, N.WM_OVERLAY_SHOW, 0, 0);
+        Announce.Say("Whisperkey is listening.");
         Log.Write($"start -> capturing in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F1} ms");
     }
 
@@ -176,10 +178,12 @@ static unsafe class Program {
         N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0);
         if (string.IsNullOrWhiteSpace(text)) {
             Log.Write("nothing recognised");
+            Announce.Say("Nothing was recognised.");
             return;
         }
         Insert.Text(text, Config.Current.InsertionMode);
         Log.Write($"inserted {text.Length} chars");
+        Announce.Say($"Inserted: {text}");
     }
 
     static void CancelDictation() {
@@ -187,6 +191,7 @@ static unsafe class Program {
         SetRecording(false);
         N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0);
         Log.Write("cancel: discarded");
+        Announce.Say("Dictation cancelled.");
     }
 
     static void SetRecording(bool on) {

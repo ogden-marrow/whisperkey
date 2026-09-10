@@ -72,8 +72,22 @@ sealed unsafe class Overlay : IDisposable {
         x = Math.Clamp(x, mi.rcWork.L, Math.Max(mi.rcWork.L, mi.rcWork.R - w));
         y = Math.Clamp(y, mi.rcWork.T, Math.Max(mi.rcWork.T, mi.rcWork.B - h));
 
+        // Short ease-out entrance, and none at all when the "Animation effects"
+        // accessibility setting is off.
+        bool fade = !_visible && Theme.AnimationsOn;
+        _opacity = fade ? 0f : 1f;
         Paint(x, y, 0f);
         if (!_visible) { ShowWindow(_hwnd, SW_SHOWNOACTIVATE); _visible = true; }
+
+        if (fade) {
+            for (int i = 1; i <= 6; i++) {
+                float t = i / 6f;
+                _opacity = 1f - (1f - t) * (1f - t);   // ease-out, no bounce
+                Paint(int.MinValue, 0, 0f);
+                Thread.Sleep(8);
+            }
+            _opacity = 1f;
+        }
     }
 
     public void Update(float level) { if (_visible) Paint(int.MinValue, 0, level); }
@@ -82,6 +96,7 @@ sealed unsafe class Overlay : IDisposable {
         if (!_visible) return;
         ShowWindow(_hwnd, SW_HIDE);
         _visible = false;
+        _opacity = 1f;
         Busy = false;
     }
 
@@ -102,13 +117,15 @@ sealed unsafe class Overlay : IDisposable {
     }
 
     int _lastX, _lastY;
+    float _opacity = 1f;
 
     void Paint(int x, int y, float level) {
         if (_bits == 0) return;
         if (x != int.MinValue) { _lastX = x; _lastY = y; }
 
         var span = new Span<uint>((void*)_bits, _w * _h);
-        Pill.Render(span, _w, _h, _scale, Theme.Accent, level, Busy, Theme.HighContrast, 0xFFFFFFFF, 0xFF000000);
+        Pill.Render(span, _w, _h, _scale, Theme.Accent, level, Busy, Theme.HighContrast, 0xFFFFFFFF, 0xFF000000,
+                    Theme.TransparencyOn, _opacity);
 
         var pos = new N.POINT { X = _lastX, Y = _lastY };
         var size = new SIZE { cx = _w, cy = _h };
