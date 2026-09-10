@@ -45,6 +45,8 @@ static unsafe class Program {
         if (hwnd == 0) return 1;
         _host = hwnd;
 
+        DarkMode.Apply(hwnd);
+
         _overlay = new Overlay();
         _overlay.Create(inst);
 
