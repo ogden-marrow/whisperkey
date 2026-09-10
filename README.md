@@ -136,6 +136,17 @@ The MSI:
 dotnet build installer/Whisperkey.wixproj -c Release
 ```
 
+The tests:
+
+```bash
+dotnet test tests/Whisperkey.Tests/Whisperkey.Tests.csproj
+```
+
+They cover the logic that is pure enough to test properly — hotkey parsing,
+config tolerance, and the model table. The parts that talk to Windows are
+verified by hand and written up in [VERIFICATION.md](docs/VERIFICATION.md),
+because a mock of `SetWinEventHook` would prove nothing.
+
 Set `WHISPERKEY_TRACE` to a file path to get a trace log. It costs nothing when
 unset.
 
