@@ -20,8 +20,19 @@ static class Theme {
         TransparencyOn = ReadDword(Personalize, "EnableTransparency", 1) != 0;
         HighContrast   = SystemInfo.HighContrast();
         AnimationsOn   = SystemInfo.AnimationsEnabled();
-        Accent         = ReadAccent();
+        Accent         = ResolveAccent();
         Changed?.Invoke();
+    }
+
+    /// Config wins over the system accent when it names a colour.
+    static uint ResolveAccent() {
+        var want = Config.Current?.Accent;
+        if (!string.IsNullOrWhiteSpace(want) && !want.Equals("system", StringComparison.OrdinalIgnoreCase)) {
+            var hex = want.TrimStart('#');
+            if (hex.Length == 6 && uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out uint rgb))
+                return 0xFF000000u | rgb;
+        }
+        return ReadAccent();
     }
 
     static uint ReadAccent() {

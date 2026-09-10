@@ -13,6 +13,10 @@ sealed class Settings {
     public string Language { get; set; } = "en";
     public string Device { get; set; } = "default";
     public string InsertionMode { get; set; } = "auto";   // auto | sendinput | clipboard
+
+    /// "system" follows the Windows accent colour. A "#RRGGBB" value overrides it,
+    /// which matters on machines whose accent is grey.
+    public string Accent { get; set; } = "system";
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

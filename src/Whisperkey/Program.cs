@@ -9,6 +9,8 @@ static unsafe class Program {
     static Audio _audio;
     static Worker _worker;
     static Stt _stt;
+    static Overlay _overlay;
+    static nint _host;
     static N.WndProc _proc;   // must outlive the window; the GC does not know Win32 holds it
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint p, int f);
@@ -24,8 +26,8 @@ static unsafe class Program {
         // thread - see ADR 0002, an STA there deadlocks every cross-process call.
         CoInitializeEx(0, 2);
 
-        Theme.Refresh();
         Config.Load();
+        Theme.Refresh();
 
         var inst = N.GetModuleHandleW(null);
         _proc = WndProc;
@@ -41,12 +43,16 @@ static unsafe class Program {
         // WS_EX_TOOLWINDOW: no taskbar entry, no Alt+Tab entry.
         var hwnd = N.CreateWindowExW(0x00000080, "WhisperkeyHost", "Whisperkey", 0, 0, 0, 0, 0, 0, 0, inst, 0);
         if (hwnd == 0) return 1;
+        _host = hwnd;
+
+        _overlay = new Overlay();
+        _overlay.Create(inst);
 
         _tray = new Tray(hwnd) { IsStartupEnabled = () => Startup.Enabled };
 
         // A bad config file must say so rather than silently reverting to defaults.
         Config.Invalid += m => _tray.Notify("Whisperkey config", m);
-        Config.Changed += () => _tray.Notify("Whisperkey", $"Settings reloaded. Hotkey: {Config.Current.Hotkey}");
+        Config.Changed += () => { Theme.Refresh(); _tray.Notify("Whisperkey", $"Settings reloaded. Hotkey: {Config.Current.Hotkey}"); };
 
         _focus = new FocusWatcher();
         _focus.Start();
@@ -86,6 +92,7 @@ static unsafe class Program {
         _keys.Dispose();
         _audio.Dispose();
         _stt.Dispose();
+        _overlay.Dispose();
         _focus.Dispose();
         _tray.Dispose();
         return 0;
@@ -100,6 +107,26 @@ static unsafe class Program {
                 else if (ev == N.WM_LBUTTONUP) OnCommand(Tray.CmdDictate);
                 return 0;
 
+            case N.WM_OVERLAY_SHOW:
+                _overlay.Busy = false;
+                _overlay.Show();
+                // Only ticks while the pill is on screen, so idle cost stays zero.
+                N.SetTimer(hwnd, 1, 33, 0);
+                return 0;
+
+            case N.WM_OVERLAY_BUSY:
+                _overlay.Busy = true;
+                return 0;
+
+            case N.WM_OVERLAY_HIDE:
+                N.KillTimer(hwnd, 1);
+                _overlay.Hide();
+                return 0;
+
+            case N.WM_TIMER:
+                _overlay.Update(_audio.Level);
+                return 0;
+
             case N.WM_COMMAND:
                 OnCommand((int)(w & 0xFFFF));
                 return 0;
@@ -107,8 +134,8 @@ static unsafe class Program {
             // Theme, accent and accessibility settings change by notification, never by polling.
             case N.WM_SETTINGCHANGE:
             case N.WM_DWMCOLORIZATIONCOLORCHANGED:
-                Theme.Refresh();
-        Config.Load();
+                Config.Load();
+        Theme.Refresh();
                 return 0;
 
             case N.WM_DESTROY:
@@ -126,20 +153,25 @@ static unsafe class Program {
         long t0 = _pressed != 0 ? _pressed : System.Diagnostics.Stopwatch.GetTimestamp();
         if (!_audio.Start(Config.Current.Device)) return;
         SetRecording(true);
+        N.PostMessageW(_host, N.WM_OVERLAY_SHOW, 0, 0);
         Log.Write($"start -> capturing in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F1} ms");
     }
 
     static void EndDictation() {
         var samples = _audio.Stop();
         SetRecording(false);
-        if (samples.Length == 0) return;
+        if (samples.Length == 0) { N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0); return; }
+        N.PostMessageW(_host, N.WM_OVERLAY_BUSY, 0, 0);
 
         if (!_stt.Ready) {
+            N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0);
             _tray.Notify("Whisperkey", "The speech model is still loading. Try again in a moment.");
             return;
         }
 
         var text = _stt.Transcribe(samples);
+        // Hide before inserting: the pill must not be on screen while keystrokes land.
+        N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0);
         if (string.IsNullOrWhiteSpace(text)) {
             Log.Write("nothing recognised");
             return;
@@ -151,6 +183,7 @@ static unsafe class Program {
     static void CancelDictation() {
         _audio.Stop();
         SetRecording(false);
+        N.PostMessageW(_host, N.WM_OVERLAY_HIDE, 0, 0);
         Log.Write("cancel: discarded");
     }
 
