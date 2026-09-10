@@ -53,11 +53,16 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $vsInstaller
 
       - name: Restore
-        run: dotnet restore src/Whisperkey/Whisperkey.csproj
+        run: |
+          dotnet restore src/Whisperkey/Whisperkey.csproj
+          dotnet restore tests/Whisperkey.Tests/Whisperkey.Tests.csproj
 
       - name: Build
         # Warnings are errors in CI. We are at zero and intend to stay there.
         run: dotnet build src/Whisperkey/Whisperkey.csproj -c Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test tests/Whisperkey.Tests/Whisperkey.Tests.csproj -c Release --no-restore
 
       - name: Publish (NativeAOT)
         # An IL2026/IL3050 here means trimming can break config or serialization at

@@ -19,6 +19,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The app has no public surface; the tests reach the internals directly. -->
+    <InternalsVisibleTo Include="Whisperkey.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="assets\*.ico" />
   </ItemGroup>
 
