@@ -8,6 +8,7 @@ static unsafe class Program {
     static Keyboard _keys;
     static Audio _audio;
     static Worker _worker;
+    static Stt _stt;
     static N.WndProc _proc;   // must outlive the window; the GC does not know Win32 holds it
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint p, int f);
@@ -57,6 +58,14 @@ static unsafe class Program {
         var dev = Config.Current.Device;
         _worker.Post(() => _audio.Prewarm(dev));   // never block startup
 
+        // The model is loaded once and kept warm; loading costs ~1.9s and the
+        // hotkey budget is 150ms, so it must never happen on a keypress.
+        _stt = new Stt();
+        _stt.Status += m => _tray.Notify("Whisperkey", m);
+        ModelDownloader.Progress += m => _tray.Notify("Whisperkey", m);
+        var modelKey = Config.Current.Model;
+        _worker.Post(() => _stt.LoadAsync(modelKey, CancellationToken.None).GetAwaiter().GetResult());
+
         _keys = new Keyboard(_focus);
         _keys.Failed  += m => _tray.Notify("Whisperkey", m);
         _keys.Killed  += () => _tray.Notify("Whisperkey",
@@ -76,6 +85,7 @@ static unsafe class Program {
         _worker.Dispose();
         _keys.Dispose();
         _audio.Dispose();
+        _stt.Dispose();
         _focus.Dispose();
         _tray.Dispose();
         return 0;
@@ -122,8 +132,20 @@ static unsafe class Program {
     static void EndDictation() {
         var samples = _audio.Stop();
         SetRecording(false);
-        Log.Write($"stop: {samples.Length} samples ({samples.Length / (double)Audio.SampleRate:F2}s)");
-        // Transcription and insertion land in #9 and #10.
+        if (samples.Length == 0) return;
+
+        if (!_stt.Ready) {
+            _tray.Notify("Whisperkey", "The speech model is still loading. Try again in a moment.");
+            return;
+        }
+
+        var text = _stt.Transcribe(samples);
+        if (string.IsNullOrWhiteSpace(text)) {
+            Log.Write("nothing recognised");
+            return;
+        }
+        // Insertion lands in #10.
+        Log.Write($"ready to insert: \"{text}\"");
     }
 
     static void CancelDictation() {
