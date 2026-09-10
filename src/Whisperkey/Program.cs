@@ -6,6 +6,8 @@ static unsafe class Program {
     static Tray _tray;
     static FocusWatcher _focus;
     static Keyboard _keys;
+    static Audio _audio;
+    static Worker _worker;
     static N.WndProc _proc;   // must outlive the window; the GC does not know Win32 holds it
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint p, int f);
@@ -48,13 +50,22 @@ static unsafe class Program {
         _focus = new FocusWatcher();
         _focus.Start();
 
+        _worker = new Worker();
+
+        _audio = new Audio();
+        _audio.Lost += m => _tray.Notify("Whisperkey", m);
+        var dev = Config.Current.Device;
+        _worker.Post(() => _audio.Prewarm(dev));   // never block startup
+
         _keys = new Keyboard(_focus);
         _keys.Failed  += m => _tray.Notify("Whisperkey", m);
         _keys.Killed  += () => _tray.Notify("Whisperkey",
             "Keyboard hook released by double-Esc. Use the tray menu to start dictation again.");
-        _keys.StartRequested  += () => { Log.Write("hotkey -> start"); SetRecording(true); };
-        _keys.StopRequested   += () => { Log.Write("stop -> insert"); SetRecording(false); };
-        _keys.CancelRequested += () => { Log.Write("cancel"); SetRecording(false); };
+        // The hook only enqueues. Doing ~110ms of device work inside the hook proc
+        // would risk Windows dropping the hook and killing the hotkey system-wide.
+        _keys.StartRequested  += () => { _pressed = System.Diagnostics.Stopwatch.GetTimestamp(); _worker.Post(BeginDictation); };
+        _keys.StopRequested   += () => _worker.Post(EndDictation);
+        _keys.CancelRequested += () => _worker.Post(CancelDictation);
         _keys.Start();
 
         while (N.GetMessageW(out var msg, 0, 0, 0) > 0) {
@@ -62,7 +73,9 @@ static unsafe class Program {
             N.DispatchMessageW(ref msg);
         }
 
+        _worker.Dispose();
         _keys.Dispose();
+        _audio.Dispose();
         _focus.Dispose();
         _tray.Dispose();
         return 0;
@@ -95,6 +108,30 @@ static unsafe class Program {
         return N.DefWindowProcW(hwnd, msg, w, l);
     }
 
+    static long _pressed;
+
+    static void BeginDictation() {
+        // Measured from the keypress itself, including queue time, because that is
+        // what the user actually waits for.
+        long t0 = _pressed != 0 ? _pressed : System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!_audio.Start(Config.Current.Device)) return;
+        SetRecording(true);
+        Log.Write($"start -> capturing in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F1} ms");
+    }
+
+    static void EndDictation() {
+        var samples = _audio.Stop();
+        SetRecording(false);
+        Log.Write($"stop: {samples.Length} samples ({samples.Length / (double)Audio.SampleRate:F2}s)");
+        // Transcription and insertion land in #9 and #10.
+    }
+
+    static void CancelDictation() {
+        _audio.Stop();
+        SetRecording(false);
+        Log.Write("cancel: discarded");
+    }
+
     static void SetRecording(bool on) {
         _keys.SetRecording(on);
         _tray.SetRecording(on);
@@ -104,7 +141,7 @@ static unsafe class Program {
         switch (cmd) {
             case Tray.CmdDictate:
                 _keys.Rearm();                       // also the way back from the kill switch
-                SetRecording(!_tray.Recording);
+                _worker.Post(() => { if (_tray.Recording) EndDictation(); else BeginDictation(); });
                 break;
             case Tray.CmdPause:
                 _tray.Paused = !_tray.Paused;
